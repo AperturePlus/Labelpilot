@@ -16,12 +16,15 @@ import RankBadge from './components/RankBadge.vue'
 import { getSettingsStore } from './stores/settings-store'
 import { getSiteManager } from './adapters/site-manager'
 import type { ProcessedPaperInfo } from './adapters/types'
-import type { MatchConfidence } from './core/venue-matcher'
+import { getVenueMatcher, type MatchConfidence } from './core/venue-matcher'
+import { DblpService } from './services/dblp-service'
 
 // State management
 const showSettings = ref(false)
 const settingsStore = getSettingsStore()
 const siteManager = getSiteManager()
+const venueMatcher = getVenueMatcher()
+const dblpService = new DblpService()
 
 // Statistics data
 const stats = reactive<StatsData>({
@@ -39,6 +42,45 @@ const activeFilter = ref<'A' | 'B' | 'C' | 'unknown' | null>(null)
 
 // Track mounted badges for cleanup
 const mountedBadges = new Map<string, { element: HTMLElement; app: App }>()
+
+// DBLP lookup queue (avoid too many concurrent requests)
+const DBLP_LOOKUP_CONCURRENCY = 2
+let dblpActiveCount = 0
+const dblpQueue: Array<() => Promise<void>> = []
+const dblpInFlight = new Set<string>()
+let processingEpoch = 0
+
+function enqueueDblpLookup(task: () => Promise<void>): void {
+  dblpQueue.push(task)
+  void drainDblpQueue()
+}
+
+function drainDblpQueue(): void {
+  while (dblpActiveCount < DBLP_LOOKUP_CONCURRENCY && dblpQueue.length > 0) {
+    const task = dblpQueue.shift()
+    if (!task) continue
+
+    dblpActiveCount++
+    task()
+      .catch(error => {
+        console.warn('[CCF Rank] DBLP task failed:', error)
+      })
+      .finally(() => {
+        dblpActiveCount--
+        drainDblpQueue()
+      })
+  }
+}
+
+let pendingUiUpdate: number | null = null
+function scheduleUiUpdate(): void {
+  if (pendingUiUpdate !== null) return
+  pendingUiUpdate = window.setTimeout(() => {
+    pendingUiUpdate = null
+    updateStats()
+    applyFilterHighlight(activeFilter.value)
+  }, 0)
+}
 
 /**
  * Check if stats panel should be expanded by default
@@ -123,6 +165,14 @@ function updateStats() {
   stats.byRank.unknown = siteStats.byRank.unknown
 }
 
+function shouldLookupDblp(paper: ProcessedPaperInfo): boolean {
+  const currentSite = siteManager.getCurrentAdapter()?.siteId
+  if (currentSite !== 'arxiv') return false
+  if (paper.venue) return false
+  if (!paper.title) return false
+  return true
+}
+
 /**
  * Create and mount a RankBadge for a paper
  */
@@ -153,22 +203,36 @@ function mountBadge(paper: ProcessedPaperInfo): void {
   }
   
   // Create Vue app for badge
+  const badgeState = reactive({
+    rank: paper.matchResult.entry?.rank || null,
+    venue: '',
+    venueFull: '',
+    year: paper.year || null,
+    venueSource: paper.venueSource,
+    confidence: paper.matchResult.confidence as MatchConfidence,
+    dblpUrl: undefined as string | undefined,
+    loading: false,
+    error: undefined as string | undefined,
+  })
+
+  {
+    const entry = paper.matchResult.entry
+    badgeState.venue = entry?.abbr || paper.venue || paper.matchResult.cleanedVenue || '未知'
+    badgeState.venueFull = entry?.name || paper.venue || paper.matchResult.cleanedVenue || '未知'
+  }
+
   const badgeApp = createApp({
     render() {
-      const entry = paper.matchResult.entry
-      const venueShort = entry?.abbr || paper.venue || paper.matchResult.cleanedVenue || '未知'
-      const venueFull = entry?.name || paper.venue || paper.matchResult.cleanedVenue || '未知'
-      const year = paper.year || undefined
-
       return h(RankBadge, {
-        rank: paper.matchResult.entry?.rank || null,
-        venue: venueShort,
-        venueFull,
-        year,
-        venueSource: paper.venueSource,
-        confidence: paper.matchResult.confidence as MatchConfidence,
-        loading: false,
-        error: undefined,
+        rank: badgeState.rank,
+        venue: badgeState.venue,
+        venueFull: badgeState.venueFull,
+        year: badgeState.year ?? undefined,
+        venueSource: badgeState.venueSource,
+        confidence: badgeState.confidence,
+        dblpUrl: badgeState.dblpUrl,
+        loading: badgeState.loading,
+        error: badgeState.error,
       })
     }
   })
@@ -178,6 +242,57 @@ function mountBadge(paper: ProcessedPaperInfo): void {
   
   // Mark as processed
   siteManager.markAsProcessed(paper.id)
+
+  // DBLP fallback (arXiv only): query by title when comments don't contain venue.
+  if (shouldLookupDblp(paper) && !dblpInFlight.has(paper.id)) {
+    dblpInFlight.add(paper.id)
+    badgeState.loading = true
+    badgeState.error = undefined
+
+    const epochAtEnqueue = processingEpoch
+    enqueueDblpLookup(async () => {
+      try {
+        const result = await dblpService.queryByTitle(paper.title)
+        if (epochAtEnqueue !== processingEpoch) return
+
+        if (result.error) {
+          badgeState.loading = false
+          badgeState.error = result.timedOut ? 'DBLP 查询超时' : `DBLP 查询失败: ${result.error}`
+          return
+        }
+
+        if (!result.found || !result.venue) {
+          badgeState.loading = false
+          return
+        }
+
+        // Update paper data for stats/filtering.
+        paper.venue = result.venue
+        paper.venueSource = 'dblp'
+        if (!paper.year && result.year) {
+          paper.year = result.year
+        }
+        const matchResult = venueMatcher.match(result.venue)
+        paper.matchResult = matchResult
+
+        // Update badge UI.
+        const entry = matchResult.entry
+        badgeState.rank = entry?.rank || null
+        badgeState.venue = entry?.abbr || result.venue
+        badgeState.venueFull = entry?.name || result.venue
+        badgeState.year = paper.year || result.year || null
+        badgeState.venueSource = 'dblp'
+        badgeState.confidence = matchResult.confidence as MatchConfidence
+        badgeState.dblpUrl = result.dblpUrl || undefined
+        badgeState.loading = false
+        badgeState.error = undefined
+
+        scheduleUiUpdate()
+      } finally {
+        dblpInFlight.delete(paper.id)
+      }
+    })
+  }
 }
 
 /**
@@ -207,6 +322,15 @@ function handlePageChange(): void {
  * Cleanup mounted badges
  */
 function cleanup(): void {
+  // Invalidate any in-flight async tasks (DBLP lookup, etc.)
+  processingEpoch++
+  dblpQueue.length = 0
+  dblpInFlight.clear()
+  if (pendingUiUpdate !== null) {
+    window.clearTimeout(pendingUiUpdate)
+    pendingUiUpdate = null
+  }
+
   for (const [, { element, app }] of mountedBadges) {
     app.unmount()
     element.remove()
