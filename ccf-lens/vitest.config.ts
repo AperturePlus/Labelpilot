@@ -12,7 +12,7 @@ if (!crypto.hash) {
 }
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue() as any],
   test: {
     globals: true,
     environment: 'jsdom',
