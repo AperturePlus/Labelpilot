@@ -246,6 +246,35 @@ export class SettingsStore {
   }
 
   /**
+   * Update multiple settings at once with a single save operation
+   * This is more efficient than calling update() multiple times
+   * 
+   * @param updates - Partial settings object with values to update
+   */
+  batchUpdate(updates: Partial<Settings>): void {
+    if (updates.showRanks) {
+      Object.assign(this._settings.showRanks, updates.showRanks)
+    }
+    if (updates.enabledSites) {
+      Object.assign(this._settings.enabledSites, updates.enabledSites)
+    }
+    if (updates.badgePosition !== undefined) {
+      this._settings.badgePosition = updates.badgePosition
+    }
+    if (updates.debugMode !== undefined) {
+      this._settings.debugMode = updates.debugMode
+    }
+    if (updates.statsExpanded !== undefined) {
+      this._settings.statsExpanded = updates.statsExpanded
+    }
+    
+    // Single save operation for all updates
+    this.save().catch(error => {
+      console.error('[SettingsStore] Error auto-saving settings:', error)
+    })
+  }
+
+  /**
    * Update a rank display setting
    */
   setRankDisplay(rank: keyof RankDisplaySettings, enabled: boolean): void {

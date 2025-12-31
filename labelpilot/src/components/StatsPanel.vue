@@ -11,7 +11,7 @@
  * - 7.5: Allow clicking a rank to filter/highlight corresponding papers
  */
 
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 export interface StatsData {
   /** Total number of papers */
@@ -41,6 +41,11 @@ const emit = defineEmits<{
 
 const isExpanded = ref(props.expanded)
 const activeFilter = ref<'A' | 'B' | 'C' | 'unknown' | null>(null)
+
+// Watch for external changes to expanded prop
+watch(() => props.expanded, (newValue) => {
+  isExpanded.value = newValue
+})
 
 /**
  * Calculate percentage for a rank

@@ -57,14 +57,16 @@ function syncFromStore() {
 }
 
 /**
- * Save settings to store
+ * Save settings to store (batch update to avoid multiple saves)
  */
 function saveSettings() {
-  settingsStore.update('showRanks', { ...showRanks.value })
-  settingsStore.update('enabledSites', { ...enabledSites.value })
-  settingsStore.update('badgePosition', badgePosition.value)
-  settingsStore.update('debugMode', debugMode.value)
-  settingsStore.update('statsExpanded', statsExpanded.value)
+  settingsStore.batchUpdate({
+    showRanks: { ...showRanks.value },
+    enabledSites: { ...enabledSites.value },
+    badgePosition: badgePosition.value,
+    debugMode: debugMode.value,
+    statsExpanded: statsExpanded.value,
+  })
 }
 
 /**

@@ -146,7 +146,8 @@ export class DblpService {
 
     // Query DBLP API
     try {
-      const result = await this.fetchFromDblp(title)
+      const { promise } = this.fetchFromDblp(title)
+      const result = await promise
       
       // Cache the result (even if not found, to avoid repeated queries)
       this.cacheManager.set(cacheKey, result)
@@ -169,9 +170,12 @@ export class DblpService {
 
   /**
    * Fetch paper info from DBLP API using GM_xmlhttpRequest
+   * Returns both the promise and an abort function for cancellation
    */
-  private fetchFromDblp(title: string): Promise<DblpResult> {
-    return new Promise((resolve, reject) => {
+  private fetchFromDblp(title: string): { promise: Promise<DblpResult>; abort: () => void } {
+    let abortFn: (() => void) | null = null
+    
+    const promise = new Promise<DblpResult>((resolve, reject) => {
       const encodedTitle = encodeURIComponent(title)
       const url = `${DBLP_API_BASE}?q=${encodedTitle}&format=json&h=5`
 
@@ -204,10 +208,18 @@ export class DblpService {
         },
       })
 
-      // Store abort function for potential cancellation
-      // (not used in current implementation but available for future use)
-      void requestControl
+      // Store abort function for cancellation support
+      abortFn = () => {
+        if (requestControl && typeof requestControl.abort === 'function') {
+          requestControl.abort()
+        }
+      }
     })
+    
+    return {
+      promise,
+      abort: () => abortFn?.(),
+    }
   }
 
   /**

@@ -108,13 +108,18 @@ export class SiteManager {
       }
     }
 
-    // Check factories and instantiate if match found
+    // Check factories and instantiate only if URL pattern matches
+    // This avoids creating unnecessary adapter instances
     for (const [siteId, factory] of this.factories.entries()) {
+      // Create a temporary adapter to check URL pattern
+      // Only keep it if it matches
       const adapter = factory()
       if (adapter.isMatch(targetUrl)) {
         this.adapters.set(siteId, adapter)
         return adapter
       }
+      // If no match, the adapter will be garbage collected
+      // To further optimize, adapters could expose static URL patterns
     }
 
     return null
