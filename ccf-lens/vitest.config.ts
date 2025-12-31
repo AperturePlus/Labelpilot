@@ -4,9 +4,10 @@ import { resolve } from 'path'
 import crypto from 'crypto'
 
 // Polyfill for crypto.hash (Node.js 21.7.0+)
+// The native crypto.hash returns a hex string by default, which supports .substring()
 if (!crypto.hash) {
-  (crypto as any).hash = (algorithm: string, data: crypto.BinaryLike) => {
-    return crypto.createHash(algorithm).update(data).digest()
+  (crypto as any).hash = (algorithm: string, data: crypto.BinaryLike, outputEncoding?: string) => {
+    return crypto.createHash(algorithm).update(data).digest(outputEncoding as any || 'hex')
   }
 }
 
