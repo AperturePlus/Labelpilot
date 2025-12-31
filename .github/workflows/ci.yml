@@ -16,7 +16,8 @@ jobs:
     
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        # Vite 7 requires Node.js 20.19+ or 22.12+
+        node-version: [20, 22]
     
     steps:
       - name: Checkout code
