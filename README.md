@@ -98,16 +98,6 @@ Please ensure your code passes all tests (`npm test`) and follows the existing c
 - Feature requests: [GitHub Discussions](https://github.com/AperturePlus/CCF-Lens/discussions)
 - Questions: Check existing issues or start a new discussion
 
-### Acknowledgments
-
-- CCF ranking data sourced from the China Computer Federation
-- Inspired by the need for efficient academic literature evaluation
-- Thanks to all contributors and users who provide feedback
-
-### License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ---
 
 ## 中文
@@ -198,20 +188,6 @@ npm run build
 - Bug 报告：[GitHub Issues](https://github.com/AperturePlus/CCF-Lens/issues)
 - 功能建议：[GitHub Discussions](https://github.com/AperturePlus/CCF-Lens/discussions)
 - 问题咨询：查看已有 issue 或发起新讨论
-
-### 致谢
-
-- CCF 排名数据来源于中国计算机学会
-- 灵感源于高效学术文献评估的需求
-- 感谢所有贡献者和提供反馈的用户
-
-### 开源协议
-
-本项目采用 MIT 协议 - 详见 [LICENSE](LICENSE) 文件
-
-## 📝 License
-
-MIT License
 
 ## 🙏 致谢
 
